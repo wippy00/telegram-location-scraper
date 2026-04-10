@@ -1,6 +1,6 @@
-# WanderVision (Travel Place Visualizer)
+# telegram-location-scraper
 
-**WanderVision** è uno strumento automatizzato basato sull'Intelligenza Artificiale che estrae, categorizza e mappa le destinazioni di viaggio partendo da Reel di Instagram e messaggi Telegram. Sfrutta l'analisi video e l'estrazione intelligente del testo (OCR) per individuare luoghi turistici e posizionarli su mappa.
+**telegram-location-scraper** è uno strumento automatizzato basato sull'Intelligenza Artificiale che estrae, categorizza e mappa le destinazioni di viaggio partendo da Reel di Instagram e messaggi Telegram. Sfrutta l'analisi video e l'estrazione intelligente del testo (OCR) per individuare luoghi turistici e posizionarli su mappa.
 
 *Nota: Questo progetto, la sua struttura e documentazione sono stati sviluppati attivamente con il supporto di sistemi di Intelligenza Artificiale generativa.*
 
