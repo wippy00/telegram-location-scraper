@@ -1,0 +1,29 @@
+# Environments
+.env
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Database and Session Files
+cookies.txt
+telegram_session.session
+telegram_session.session-journal
+*.db
+*.sqlite3
+data/instagram_videos/*
+
+# Test and Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/

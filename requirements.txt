@@ -1,0 +1,11 @@
+sqlmodel
+python-dotenv
+telethon
+sqlalchemy
+pydantic
+requests
+opencv-python
+numpy
+easyocr
+deep-translator
+yt-dlp
