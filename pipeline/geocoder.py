@@ -116,7 +116,7 @@ class GoogleMapsGeocoder:
             "name": place.get("name"),
             "lat": float(place["geometry"]["location"]["lat"]),
             "lng": float(place["geometry"]["location"]["lng"]),
-            "place_id": place.get("place_id"),
+            "google_place_id": place.get("place_id"),
             "address": place.get("formatted_address"),
             "categories": place.get("types", []),
             "website": place.get("website"),
