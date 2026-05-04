@@ -1,20 +1,15 @@
-import hashlib
-import os
 from uuid import uuid4
-
-import requests
-from dotenv import load_dotenv
 
 from data.database import Database
 from models.location import Location, MarkerCategory
+from workers.google_maps_common import (
+    download_place_photo,
+    fetch_place_photo_references,
+    make_location_checksum,
+    search_place,
+)
 
-load_dotenv()
 db = Database("sqlite:///data/database.db")
-
-
-def _make_checksum(name: str, lat: float, lng: float) -> str:
-    payload = f"{name.strip().lower()}|{lat:.6f}|{lng:.6f}"
-    return hashlib.md5(payload.encode("utf-8")).hexdigest()
 
 
 def _infer_location_category(text: str) -> MarkerCategory:
@@ -30,49 +25,6 @@ def _infer_location_category(text: str) -> MarkerCategory:
         return MarkerCategory.CITY
 
     return MarkerCategory.OTHER
-
-
-def search_place(query: str) -> dict | None:
-    api_key = os.getenv("GOOGLE_MAPS_API_KEY")
-    if not api_key:
-        print("[Address Worker] GOOGLE_MAPS_API_KEY not found.")
-        return None
-
-    url = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-    params = {"query": query, "key": api_key}
-
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        if not data.get("results"):
-            return None
-
-        place = data["results"][0]
-        lat = place["geometry"]["location"]["lat"]
-        lng = place["geometry"]["location"]["lng"]
-        place_id = place.get("place_id")
-
-        import urllib.parse
-
-        encoded_query = urllib.parse.quote(query)
-        encoded_name = urllib.parse.quote(place.get("name", query))
-
-        if place_id:
-            google_maps_url = f"https://www.google.com/maps/search/?api=1&query={encoded_name}&query_place_id={place_id}"
-        else:
-            google_maps_url = f"https://www.google.com/maps/search/?api=1&query={encoded_query}"
-
-        return {
-            "name": place.get("name") or query,
-            "lat": float(lat),
-            "lng": float(lng),
-            "google_maps_url": google_maps_url,
-        }
-    except Exception as e:
-        print(f"[Address Worker] Error searching place: {e}")
-        return None
 
 
 if __name__ == "__main__":
@@ -99,7 +51,17 @@ if __name__ == "__main__":
         name = (result["name"] or query).strip()[:255]
         lat = float(result["lat"])
         lng = float(result["lng"])
-        checksum = _make_checksum(name, lat, lng)
+        checksum = make_location_checksum(name, lat, lng)
+        photo_paths = []
+
+        photo_references = result.get("photo_references") or []
+        if not photo_references and result.get("place_id"):
+            photo_references = fetch_place_photo_references(result["place_id"], log_prefix="[Address Worker]")
+
+        for photo_reference in photo_references[:3]:
+            photo_path = download_place_photo(photo_reference, name=name, log_prefix="[Address Worker]")
+            if photo_path:
+                photo_paths.append(photo_path)
 
         if not db.get_location_by_checksum(checksum):
             location = Location(
@@ -107,12 +69,13 @@ if __name__ == "__main__":
                 name=name,
                 lat=lat,
                 lng=lng,
+                telegram_message_id=message.telegram_id,
                 description=query,
                 google_maps_url=result["google_maps_url"],
+                photo_paths=photo_paths or None,
                 source_url=f"telegram:{message.telegram_id}",
                 category=_infer_location_category(query),
                 checksum=checksum,
-                is_draft=False,
                 platform="address",
             )
             db.insert_location(location)

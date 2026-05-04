@@ -45,6 +45,18 @@ class Database:
             if "google_maps_url" not in column_names:
                 conn.exec_driver_sql("ALTER TABLE location ADD COLUMN google_maps_url TEXT")
 
+            if "photo_paths" not in column_names:
+                conn.exec_driver_sql("ALTER TABLE location ADD COLUMN photo_paths TEXT")
+
+            if "telegram_message_id" not in column_names:
+                conn.exec_driver_sql("ALTER TABLE location ADD COLUMN telegram_message_id INTEGER")
+
+            if "is_deleted" not in column_names:
+                conn.exec_driver_sql("ALTER TABLE location ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+
+            if "deleted_at" not in column_names:
+                conn.exec_driver_sql("ALTER TABLE location ADD COLUMN deleted_at TEXT")
+
 #----------------------------------------
 #   Location Methods
 #----------------------------------------
@@ -247,10 +259,11 @@ class Database:
             TelegramMessage: The latest message found, or None if no messages exist
         """
         with Session(self.engine) as session:
+            timestamp_column = getattr(TelegramMessage, "timestamp")
             statement = (
                 select(TelegramMessage)
                 .where(TelegramMessage.chat_id == chat_id)
-                .order_by(TelegramMessage.timestamp.desc())
+                .order_by(timestamp_column.desc())
             )
             result = session.exec(statement).first()
             return result
@@ -267,16 +280,17 @@ class Database:
             List[TelegramMessage]: List of messages after the timestamp, ordered by time
         """
         with Session(self.engine) as session:
+            timestamp_column = getattr(TelegramMessage, "timestamp")
             statement = (
                 select(TelegramMessage)
                 .where(
                     (TelegramMessage.chat_id == chat_id) &
                     (TelegramMessage.timestamp >= since)
                 )
-                .order_by(TelegramMessage.timestamp)
+                .order_by(timestamp_column)
             )
             results = session.exec(statement).all()
-            return results
+            return list(results)
 
     def get_unprocessed_messages(self, status: str = "imported") -> List[TelegramMessage]:
         """
@@ -290,13 +304,14 @@ class Database:
             List[TelegramMessage]: List of unprocessed messages
         """
         with Session(self.engine) as session:
+            timestamp_column = getattr(TelegramMessage, "timestamp")
             statement = (
                 select(TelegramMessage)
                 .where(TelegramMessage.status == status)
-                .order_by(TelegramMessage.timestamp)
+                .order_by(timestamp_column)
             )
             results = session.exec(statement).all()
-            return results
+            return list(results)
 
     def get_reprocessable_instagram_messages(self, statuses: Optional[List[str]] = None) -> List[TelegramMessage]:
         """
@@ -315,21 +330,25 @@ class Database:
             List[TelegramMessage]: Candidate messages ordered by timestamp.
         """
         with Session(self.engine) as session:
+            raw_text_column = getattr(TelegramMessage, "raw_text")
+            category_column = getattr(TelegramMessage, "category")
+            status_column = getattr(TelegramMessage, "status")
+            timestamp_column = getattr(TelegramMessage, "timestamp")
             instagram_like = (
-                (TelegramMessage.category == "instagram") |
-                TelegramMessage.raw_text.contains("instagram.com/reel") |
-                TelegramMessage.raw_text.contains("instagram.com/p/") |
-                TelegramMessage.raw_text.contains("instagr.am")
+                (category_column == "instagram") |
+                raw_text_column.contains("instagram.com/reel") |
+                raw_text_column.contains("instagram.com/p/") |
+                raw_text_column.contains("instagr.am")
             )
 
             statement = select(TelegramMessage).where(instagram_like)
 
             if statuses:
-                statement = statement.where(TelegramMessage.status.in_(statuses))
+                statement = statement.where(status_column.in_(statuses))
 
-            statement = statement.order_by(TelegramMessage.timestamp)
+            statement = statement.order_by(timestamp_column)
             results = session.exec(statement).all()
-            return results
+            return list(results)
 
     def get_messages_without_category(self) -> List[TelegramMessage]:
         """
@@ -342,7 +361,7 @@ class Database:
         with Session(self.engine) as session:
             statement = select(TelegramMessage).where(TelegramMessage.category == None)
             results = session.exec(statement).all()
-            return results
+            return list(results)
 
     def update_message_status(self, telegram_id: int, status: str, processed_at: Optional[datetime] = None, category: Optional[str] = None) -> None:
         """
@@ -431,6 +450,22 @@ class Database:
             statement = select(InstagramReel).where(InstagramReel.telegram_id == telegram_id)
             result = session.exec(statement).first()
             return result
+
+    def get_instagram_reel_by_source_url(self, source_url: str) -> InstagramReel | None:
+        """
+        Retrieve an InstagramReel snapshot by its original source URL.
+
+        Args:
+            source_url (str): Instagram reel URL
+
+        Returns:
+            InstagramReel | None: snapshot if found
+        """
+        with Session(self.engine) as session:
+            statement = select(InstagramReel).where(InstagramReel.source_url == source_url)
+            result = session.exec(statement).first()
+            return result
+
     def get_reels_by_pipeline_status(self, pipeline_status: str) -> List[InstagramReel]:
         """
         Retrieve all InstagramReel objects that are at a specific stage in the pipeline.
