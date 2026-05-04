@@ -12,7 +12,8 @@ telegram_session.session
 telegram_session.session-journal
 *.db
 *.sqlite3
-data/instagram_videos/*
+media/instagram_videos/*
+media/places/*
 
 # Test and Coverage
 .coverage

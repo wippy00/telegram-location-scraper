@@ -1,16 +1,13 @@
-from typing import List, Optional, Type, TypeVar , Any, Generic
-from datetime import datetime
+import uuid
+from typing import TYPE_CHECKING, Optional, List
+from datetime import datetime, timezone
 from enum import Enum
+from sqlmodel import SQLModel, Field, Column, Text, JSON, Relationship
+from sqlalchemy.types import Double
 
-from sqlmodel import LargeBinary, SQLModel, Field, Relationship
-from sqlalchemy.orm import Mapped
-from sqlalchemy import Column, JSON, types, Double
-from pydantic import computed_field
+if TYPE_CHECKING:
+    from .telegram_message import TelegramMessage
 
-
-#----------------------------------------
-#   Enums
-#----------------------------------------
 class MarkerCategory(str, Enum):
     FOOD = "food"
     LANDMARK = "landmark"
@@ -20,51 +17,33 @@ class MarkerCategory(str, Enum):
     CITY = "city"
     OTHER = "other"
 
-
-
-#----------------------------------------
-#   Marker Model
-#----------------------------------------
 class Location(SQLModel, table=True):
-    id: str = Field(primary_key=True, max_length=32, min_length=32)
+    """Luogo finale estratto dalla pipeline."""
+    
+    id: str = Field(default_factory=lambda: uuid.uuid4().hex, primary_key=True)
+    
+    # Foreign Key verso TelegramMessage
+    message_id: Optional[int] = Field(default=None, foreign_key="telegrammessage.id", index=True)
+    message: Optional["TelegramMessage"] = Relationship(back_populates="locations")
+
     name: str = Field(max_length=255)
     lat: float = Field(sa_column=Column(Double))
     lng: float = Field(sa_column=Column(Double))
-
-    telegram_message_id: Optional[int] = Field(
-        default=None,
-        foreign_key="telegrammessage.telegram_id",
-        index=True,
-    )
-  
-    description: Optional[str] = None
-    google_maps_url: Optional[str] = None
-    source_url: Optional[str] = None
-    photo_paths: Optional[list[str]] = Field(default=None, sa_column=Column(JSON))
     
     category: Optional[MarkerCategory] = None
+    description: Optional[str] = Field(default=None, sa_column=Column(Text))
     
-    # Deduplication and tracking fields
-    checksum: Optional[str] = Field(default=None, index=True, unique=True)  # Hash di (name, lat, lng) per deduplication
-    is_draft: bool = Field(default=True)  # True se estratto da messaggio (needs_review), False se confermato
-    platform: Optional[str] = Field(default=None)  # Fonte: "instagram", "maps", "address", "manual"
+    # Info Mappe e Deduplicazione
+    address: Optional[str] = None
+    website: Optional[str] = None
+    google_maps_tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    google_maps_url: Optional[str] = None
+    google_place_id: Optional[str] = Field(default=None, index=True)
+    
+    photo_paths: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    
+    # Workflow
+    is_draft: bool = Field(default=True, index=True)
     is_deleted: bool = Field(default=False, index=True)
-    deleted_at: Optional[datetime] = Field(default=None)
-
-    def __repr__(self):
-        return (
-            f"\n"
-            f"    {'id':<12} {self.id}\n"
-            f"    {'name':<12} {self.name}\n"
-            # f"    {'description':<12} {self.description},\n"
-            # f"    {'lat':<12} {self.lat},\n"
-            # f"    {'lng':<12} {self.lng},\n"
-            # f"    {'images':<12} {self.images}\n"
-            f"    {'file':<12} {self.source_url}\n"
-            f"\n"
-    )
-
-    def __str__(self):
-        return self.__repr__()
     
-
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

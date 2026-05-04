@@ -1,9 +1,7 @@
 import os
-from data.database import Database
+import re
 
-db = Database("sqlite:///data/database.db")
-
-def _extract_burned_subtitles_text(
+def extract_burned_subtitles_text(
     video_path: str,
     sample_every_seconds: float = 1.0,
     max_frames: int = 80,
@@ -12,7 +10,6 @@ def _extract_burned_subtitles_text(
         import cv2
         import numpy as np
         import easyocr
-        import re
         from difflib import SequenceMatcher
     except ImportError:
         return None, "unavailable_missing_dependency"
@@ -76,7 +73,7 @@ def _extract_burned_subtitles_text(
             valid_fragments = []
             for (bbox, text, prob) in results:
                 cleaned = clean_text(text)
-                if prob >= 0.5 and not is_junk(cleaned, prob):
+                if prob >= 0.5 and not is_junk(cleaned, prob): # type: ignore
                     valid_fragments.append({
                         'text': cleaned,
                         'x': bbox[0][0],
@@ -110,24 +107,3 @@ def _extract_burned_subtitles_text(
         return None, f"error:{e.__class__.__name__}"
     finally:
         cap.release()
-
-if __name__ == "__main__":
-    reels = db.get_reels_by_pipeline_status("pending_ocr")
-    for reel in reels:
-        print(f"[OCR Worker] Processing reel: {reel.shortcode}")
-        
-        video_path_for_ocr = reel.video_path
-        if video_path_for_ocr and os.path.exists(video_path_for_ocr):
-            print(f"[OCR Worker] Running OCR on video: {video_path_for_ocr}")
-            ocr_text, ocr_status = _extract_burned_subtitles_text(video_path_for_ocr)
-            print(f"[OCR Worker] OCR status: {ocr_status}")
-        else:
-            print("[OCR Worker] Video path missing or invalid. Skipping extraction.")
-            ocr_text, ocr_status = None, "skipped_no_video_path"
-            
-        reel.ocr_text = ocr_text
-        reel.ocr_status = ocr_status
-        reel.pipeline_status = "pending_ai"
-        
-        db.upsert_instagram_reel(reel)
-        print(f"[OCR Worker] Updated reel. Moving to pending_ai.\n")

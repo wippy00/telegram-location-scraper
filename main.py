@@ -1,97 +1,88 @@
-import runpy
-import traceback
-from pathlib import Path
+import asyncio
+import os
+from dotenv import load_dotenv
 
+from database.engine import get_engine, init_db
+from database.crud import DatabaseCRUD
+from models import PipelineStatus, Location
 
-ROOT_DIR = Path(__file__).resolve().parent
+from pipeline.router import extract_locations_from_message
 
-IMPORT_SCRIPT = ROOT_DIR / "importers" / "telegram.py"
-CATEGORIZER_SCRIPT = ROOT_DIR / "workers" / "categorizer.py"
-ADDRESS_SCRIPT = ROOT_DIR / "workers" / "address.py"
-INSTAGRAM_SCRIPT = ROOT_DIR / "workers" / "instagram.py"
-OCR_SCRIPT = ROOT_DIR / "workers" / "ocr.py"
-AI_SCRIPT = ROOT_DIR / "workers" / "ai_extractor.py"
-MAPS_SCRIPT = ROOT_DIR / "workers" / "maps.py"
-RESPONSE_SCRIPT = ROOT_DIR / "workers" / "response.py"
+load_dotenv()
 
-
-def _run_step(step_name: str, script_path: Path) -> bool:
-	print(f"\n[Orchestrator] STEP '{step_name}'")
-	try:
-		runpy.run_path(str(script_path), run_name="__main__")
-	except SystemExit as e:
-		if e.code not in (0, None):
-			print(f"[Orchestrator] STEP '{step_name}' failed (exit={e.code})")
-			return False
-	except Exception:
-		print(f"[Orchestrator] STEP '{step_name}' failed")
-		traceback.print_exc()
-		return False
-
-	print(f"[Orchestrator] STEP '{step_name}' completed")
-	return True
-
-
-def run_import() -> bool:
-	return _run_step("import", IMPORT_SCRIPT)
-
-
-def categorizer() -> bool:
-	return _run_step("categorizer", CATEGORIZER_SCRIPT)
-
-
-def address() -> bool:
-	return _run_step("address", ADDRESS_SCRIPT)
-
-
-def instagram() -> bool:
-	return _run_step("instagram", INSTAGRAM_SCRIPT)
-
-
-def ocr() -> bool:
-	return _run_step("ocr", OCR_SCRIPT)
-
-
-def ai() -> bool:
-	return _run_step("ai", AI_SCRIPT)
-
-
-def maps() -> bool:
-	return _run_step("maps", MAPS_SCRIPT)
-
-
-def response() -> bool:
-	return _run_step("response", RESPONSE_SCRIPT)
-
-
-def main() -> int:
-	print("[Orchestrator] Pipeline avviata.")
-
-	step_results = [
-		run_import(),
+async def run_worker():
+    """Loop principale che scansiona il DB e processa i messaggi."""
     
-		categorizer(),
-	
-    	instagram(),
-		ocr(),
-		ai(),
-		maps(),
-		
+    # 1. Configurazione Database
+    db_path = os.getenv("DATABASE_PATH", "sqlite:///data/database.db")
+    engine = get_engine(db_path)
+    init_db(engine)
+    db = DatabaseCRUD(engine)
 
-		address(),
-		
-        
-        # response(),
-	]
-	has_failures = not all(step_results)
+    print("Worker Pipeline avviato. In attesa di messaggi...")
 
-	if has_failures:
-		print("\n[Orchestrator] Pipeline terminata con errori.")
-		return 1
+    while True:
+        try:
+            pending_messages = db.get_unprocessed_messages(status=PipelineStatus.IMPORTED)
 
-	print("\n[Orchestrator] Pipeline completata con successo.")
-	return 0
+            if not pending_messages:
+                await asyncio.sleep(5)
+                continue
 
+            print(f"\nTrovati {len(pending_messages)} messaggi da analizzare.")
+
+            for msg in pending_messages:
+                print(f"Elaborazione messaggio ID {msg.id}...")
+                db.update_message_status(msg.id, PipelineStatus.PROCESSING) # type: ignore
+                
+                try:
+                    extracted_data = await extract_locations_from_message(msg.raw_text, msg.id, db) # type: ignore
+                    
+                    # Salva il platform_detected
+                    platform_detected = extracted_data.get("platform_detected")
+                    if platform_detected:
+                        db.update_message_platform(msg.id, platform_detected) #type: ignore
+
+                    if not extracted_data or not extracted_data.get("locations"):
+                        print("Nessun luogo trovato nel messaggio. Scartato.")
+                        db.update_message_status(msg.id, PipelineStatus.DISCARDED) #type: ignore
+                        continue
+
+                    # Salva i luoghi
+                    for loc_data in extracted_data["locations"]:
+                        new_location = Location(
+                            message_id=msg.id,
+                            name=loc_data["name"],
+                            lat=loc_data["lat"],
+                            lng=loc_data["lng"],
+                            description=loc_data.get("description"),
+                            address=loc_data.get("address"),
+                            website=loc_data.get("website"),
+                            category=loc_data.get("category"),
+                            google_maps_tags=loc_data.get("categories"),
+                            google_maps_url=loc_data.get("google_maps_url"),
+                            google_place_id=loc_data.get("google_place_id"),
+                            photo_paths=loc_data.get("local_photos", [])
+                        )
+                        db.insert_location(new_location)
+                        print(f"Salvato: {new_location.name} ({new_location.lat}, {new_location.lng})")
+
+                    db.update_message_status(msg.id, PipelineStatus.DONE) #type: ignore
+                    
+                except Exception as e:
+                    print(f"Errore elaborando messaggio {msg.id}: {e}")
+                    db.update_message_status(msg.id, PipelineStatus.FAILED) #type: ignore
+                    continue
+
+        except Exception as e:
+            print(f"Errore critico nel ciclo principale: {e}")
+            # Se c'è un errore, aspetta un po' prima di riprovare per non impazzire
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
-	raise SystemExit(main())
+
+    try:
+        # Avviamo il worker in modalità asincrona
+        asyncio.run(run_worker())
+    except KeyboardInterrupt:
+        print("\nWorker fermato manualmente.")
