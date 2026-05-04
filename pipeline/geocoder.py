@@ -4,6 +4,9 @@ import requests
 from urllib.parse import urlparse, parse_qs
 from typing import Optional, Dict, Any, List
 
+from models.location import MarkerCategory
+
+
 class GoogleMapsGeocoder:
     def __init__(self, media_folder: str = "media/places"):
         self.api_key = os.getenv("GOOGLE_MAPS_API_KEY")
@@ -14,6 +17,66 @@ class GoogleMapsGeocoder:
         # Cartella dove salveremo le immagini
         self.media_folder = media_folder
         os.makedirs(self.media_folder, exist_ok=True)
+
+    def _map_google_types_to_category(self, gmaps_types: List[str]) -> Optional[MarkerCategory]:
+        """
+        Mappa i 'types' di Google Maps alla nostra MarkerCategory.
+        La logica è basata su priorità: se trovo una categoria 'forte', la uso subito.
+        """
+        if not gmaps_types:
+            return None
+
+        # Mappe di priorità da type di Google a MarkerCategory
+        # (dalla più specifica alla più generica)
+        mapping = {
+            # CIBO
+            "restaurant": MarkerCategory.FOOD,
+            "cafe": MarkerCategory.FOOD,
+            "bar": MarkerCategory.FOOD,
+            "bakery": MarkerCategory.FOOD,
+            "meal_takeaway": MarkerCategory.FOOD,
+            "meal_delivery": MarkerCategory.FOOD,
+
+            # CULTURA E SVAGO
+            "museum": MarkerCategory.CULTURE,
+            "art_gallery": MarkerCategory.CULTURE,
+            "tourist_attraction": MarkerCategory.LANDMARK,
+            "park": MarkerCategory.FUN,
+            "amusement_park": MarkerCategory.FUN,
+            "zoo": MarkerCategory.FUN,
+            "aquarium": MarkerCategory.FUN,
+            "landmark": MarkerCategory.LANDMARK,
+            "church": MarkerCategory.CULTURE,
+            "hindu_temple": MarkerCategory.CULTURE,
+            "mosque": MarkerCategory.CULTURE,
+            "synagogue": MarkerCategory.CULTURE,
+            "place_of_worship": MarkerCategory.CULTURE,
+            "library": MarkerCategory.CULTURE,
+            "movie_theater": MarkerCategory.FUN,
+            "stadium": MarkerCategory.FUN,
+
+            # TRASPORTI
+            "airport": MarkerCategory.TRANSPORT,
+            "train_station": MarkerCategory.TRANSPORT,
+            "subway_station": MarkerCategory.TRANSPORT,
+            "light_rail_station": MarkerCategory.TRANSPORT,
+            "bus_station": MarkerCategory.TRANSPORT,
+            "taxi_stand": MarkerCategory.TRANSPORT,
+
+            # SERVIZI E ALTRO
+            "lodging": MarkerCategory.OTHER, # Alloggio
+            "store": MarkerCategory.OTHER, # Negozio generico
+            "point_of_interest": MarkerCategory.OTHER,
+            "establishment": MarkerCategory.OTHER,
+        }
+
+        for g_type in gmaps_types:
+            if g_type in mapping:
+                return mapping[g_type]
+
+        # Se nessun type specifico è stato trovato, restituiamo None
+        # Sarà poi la pipeline a decidere se assegnare 'OTHER' o lasciare vuoto
+        return None
 
     def _clean_query(self, query: str) -> str:
         """Estrae l'indirizzo utile se la query è un URL complesso."""
@@ -112,13 +175,18 @@ class GoogleMapsGeocoder:
         if download_n_images > 0 and photo_refs:
             local_photos = self._download_photos(photo_refs, place.get("place_id"), download_n_images) # type: ignore
 
+        # Mappiamo la categoria
+        gmaps_types = place.get("types", [])
+        category = self._map_google_types_to_category(gmaps_types)
+
         return {
             "name": place.get("name"),
             "lat": float(place["geometry"]["location"]["lat"]),
             "lng": float(place["geometry"]["location"]["lng"]),
             "google_place_id": place.get("place_id"),
             "address": place.get("formatted_address"),
-            "categories": place.get("types", []),
+            "category": category, # CAMPO AGGIUNTO!
+            "google_maps_tags": gmaps_types, # Rinomino per chiarezza
             "website": place.get("website"),
             "google_maps_url": maps_url,
             "local_photos": local_photos
