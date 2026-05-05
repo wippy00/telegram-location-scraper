@@ -1,51 +1,113 @@
-from utils.llm_extractor import extract_places_via_llm
+import asyncio
+import requests
+import re
+from urllib.parse import urlparse, parse_qs
+from pipeline.geocoder import GoogleMapsGeocoder
 
+# I due messaggi da testare
+message1 = "Ninenzaka - Kyoto\nhttps://maps.app.goo.gl/Y5SLYDjjvMJVEaq1A"
+message2 = "https://maps.app.goo.gl/fZi74PpDFB2rvJCM7?g_st=ic"
 
+def extract_url(text):
+    """Estrae il link di Google Maps dal testo"""
+    match = re.search(r'(https?://(?:www\.)?(?:maps\.app\.goo\.gl|goo\.gl/maps|maps\.google\.com|google\.com/maps)[^\s]+)', text)
+    return match.group(1) if match else None
 
-reel_description = """
-🔥 JAPAN’S DREAM BENTO BOX 🔥
-@oneblogram ◀ Follow for more insane local eats in Japan 🇯🇵
+def resolve_short_url(url):
+    """Espande il link corto"""
+    if "maps.app.goo.gl" in url or "goo.gl" in url:
+        try:
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            response = requests.head(url, allow_redirects=True, headers=headers, timeout=5)
+            return response.url
+        except Exception as e:
+            print(f"  Errore nel risolvere: {e}")
+            return url
+    return url
 
-This Harajuku spot serves a bento box that’s every meat lover’s dream—featuring Kokusan ribs weighing over one kilogram!
+def extract_place_id(url):
+    """Tenta di estrarre il place_id o ftid da un URL Google Maps"""
+    # Cerca ftid nei parametri
+    match = re.search(r'ftid=([^&]+)', url)
+    if match:
+        return match.group(1)
+    
+    # Cerca place_id nei parametri
+    match = re.search(r'place_id=([^&]+)', url)
+    if match:
+        return match.group(1)
+    
+    # Cerca il format 0x....:0x.... che appare nel path di Google Maps
+    match = re.search(r'0x[a-f0-9]+:0x[a-f0-9]+', url)
+    if match:
+        return match.group(0)
+    
+    return None
 
-Smoked low and slow for 10–12 hours, the ribs come out fall-off-the-bone tender with an intense smoky punch. And here’s the pro move: drench them in the house-made sauces. The red hot sauce and BBQ sauce are unbeatable.
+def extract_query_param(url):
+    """Estrae il parametro 'q' o 'query' dall'URL"""
+    parsed_url = urlparse(url)
+    params = parse_qs(parsed_url.query)
+    if 'q' in params:
+        return params['q'][0]
+    if 'query' in params:
+        return params['query'][0]
+    return None
 
-This is one of those meals that leaves a lasting impression—seriously a must for anyone chasing bold flavors in Tokyo.
+async def test_message(name, message):
+    print(f"\n{'='*60}")
+    print(f"TEST: {name}")
+    print(f"{'='*60}")
+    print(f"Messaggio originale:\n{message}\n")
+    
+    # 1. Estrai il link
+    url = extract_url(message)
+    print(f"1. Link estratto:\n   {url}\n")
+    
+    # 2. Risolvi il link corto
+    long_url = resolve_short_url(url)
+    print(f"2. URL risolto:\n   {long_url}\n")
+    
+    # 3. Tenta di estrarre il place_id
+    place_id = extract_place_id(long_url)
+    print(f"3. Place ID estratto:\n   {place_id if place_id else 'NESSUNO'}\n")
+    
+    # 4. Tenta di estrarre il parametro query
+    query_param = extract_query_param(long_url)
+    print(f"4. Query parameter estratto:\n   {query_param if query_param else 'NESSUNO'}\n")
+    
+    # 5. Tenta il geocoder
+    print(f"5. Test del geocoder:")
+    geocoder = GoogleMapsGeocoder()
+    result = geocoder.resolve(long_url, download_n_images=0) # type: ignore
+    if result:
+        print(f"   ✓ Geocoder ha trovato: {result.get('name')}")
+        print(f"     Lat: {result.get('lat')}, Lng: {result.get('lng')}")
+    else:
+        print(f"   ✗ Geocoder NON ha trovato nulla")
+        
+        # Prova fallback con il testo del messaggio
+        print(f"\n6. Tentativo fallback con il testo del messaggio:")
+        text_lines = message.split('\n')
+        text_part = text_lines[0].strip() if text_lines else message
+        print(f"   Testo usato: '{text_part}'")
+        fallback_result = geocoder.search_by_text(text_part, download_n_images=0)
+        if fallback_result:
+            print(f"   ✓ Fallback ha trovato: {fallback_result.get('name')}")
+            print(f"     Lat: {fallback_result.get('lat')}, Lng: {fallback_result.get('lng')}")
+        else:
+            print(f"   ✗ Fallback NON ha trovato nulla")
 
-📍 Kokusan Ribs
-4 Chome-21-13 Jingumae, Shibuya, Tokyo
-• Kokusan Ribs 2,900 JPY per 100g
+async def main():
+    print("\n" + "="*60)
+    print("ANALISI DELLE DIFFERENZE TRA I DUE LINK")
+    print("="*60)
+    
+    await test_message("Messaggio 1 (SCARTATO)", message1)
+    await test_message("Messaggio 2 (PROCESSATO)", message2)
 
-🍀 SAVE this post for your next Tokyo food adventure! 🍀
-
-/ Japanese cuisine / Tokyo food / BBQ Japan / Harajuku eats / Japan foodie / Hidden gems Tokyo / Lunch in Japan / #texasbbq #japanfood #japanesefoodie #wagyubeef
-"""
-
-
-reel_ocr = """
-OVER KG BEEF RIB BENTO IN JAPAN
-Today Im in Harajuku
-follo Kokusay Fd always wanted t0 sink my teeth grams the Please Irom yea
-Td always wanted to sink teeth
-into mouthful of smoked beef chunk
-and today that dream came true
-Their Kokusan ribs are smoked
-low and slw for 10 t0 12 hours
-which is why they re incredibly tender Kokusan BEEF
-with that bold smoky flavor
-And here s pro tip
-pour their sauces generously over the meat
-The red hot sauce and
-and everything here is homemade
-If you re a true meat lover
-this is one spot
-Shibuya Tokyo YoU can t afford to miss
-SLICE of LIE you can t afford to miss
-"""
-
-places = extract_places_via_llm(reel_description, reel_ocr)
-
-print(places)
-
-
-
+if __name__ == "__main__":
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    asyncio.run(main())

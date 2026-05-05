@@ -29,6 +29,27 @@ class MapsExtractor(BaseExtractor):
         """Funzione wrapper sincrona per chiamare il geocoder"""
         return self.geocoder.resolve(url, download_n_images=5)
 
+    def _extract_text_before_url(self, text: str) -> str | None:
+        """Estrae il testo prima del link, se presente."""
+        url = self._extract_url_from_text(text)
+        if not url:
+            return None
+        idx = text.find(url)
+        if idx > 0:
+            extracted = text[:idx].strip()
+            if extracted:
+                return extracted
+        return None
+
+    def _extract_fallback_query(self, long_url: str) -> str | None:
+        """Estrae una query sensata dall'URL per il fallback."""
+        # Usa il metodo del geocoder per pulire l'URL
+        cleaned = self.geocoder._clean_query(long_url)
+        # Se è ancora un URL, significa che non siamo riusciti a estrarre nulla
+        if cleaned.startswith("http"):
+            return None
+        return cleaned
+
     async def process(self, text: str) -> dict:
         """Il metodo chiamato dal router.py"""
         
@@ -45,5 +66,19 @@ class MapsExtractor(BaseExtractor):
         
         if geocoder_result:
             return {"locations": [geocoder_result]}
+        
+        # FALLBACK 1: Se il messaggio ha testo prima del link, usalo
+        fallback_text = self._extract_text_before_url(text)
+        if fallback_text:
+            fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_text, 5)
+            if fallback_result:
+                return {"locations": [fallback_result]}
+        
+        # FALLBACK 2: Estrai il testo dal path dell'URL
+        fallback_query = self._extract_fallback_query(long_url)
+        if fallback_query:
+            fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_query, 5)
+            if fallback_result:
+                return {"locations": [fallback_result]}
             
         return {"locations": []}

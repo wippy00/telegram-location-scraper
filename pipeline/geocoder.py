@@ -85,15 +85,53 @@ class GoogleMapsGeocoder:
         
         parsed_url = urlparse(query)
         params = parse_qs(parsed_url.query)
+        
+        # Prova a estrarre il parametro 'daddr' (destination address) per le directions
+        if 'daddr' in params:
+            return params['daddr'][0]
+        
+        # Prova a estrarre il parametro 'q'
         if 'q' in params:
             return params['q'][0]
+        
+        # Prova a estrarre il parametro 'query'
+        if 'query' in params:
+            return params['query'][0]
+        
+        # Se niente di cui sopra funziona, prova a estrarre dal path
+        # Il path di Google Maps è: /maps/place/NOME+LUOGO,+INDIRIZZO/data=...
+        path = parsed_url.path
+        if '/maps/place/' in path:
+            # Estrai la parte dopo '/maps/place/' e prima di '/data'
+            match = re.search(r'/maps/place/([^/]+)(?:/data|$)', path)
+            if match:
+                place_name = match.group(1)
+                # Decodifica gli spazi (+ diventa spazio, %20 diventa spazio)
+                place_name = place_name.replace('+', ' ').replace('%20', ' ')
+                # Rimuovi il checksum finale se presente (es: ,+%E3%80%92...)
+                place_name = re.sub(r',\s*(?:%[0-9A-Fa-f]{2}|.)+$', '', place_name)
+                if place_name:
+                    return place_name
+        
         return query
 
     def _extract_place_id(self, url: str) -> Optional[str]:
         """Tenta di estrarre il place_id o ftid da un URL Google Maps."""
+        # Cerca ftid nei parametri
         match = re.search(r'ftid=([^&]+)', url)
         if match:
             return match.group(1)
+        
+        # Cerca place_id nei parametri
+        match = re.search(r'place_id=([^&]+)', url)
+        if match:
+            return match.group(1)
+        
+        # Cerca il format 0x....:0x.... che appare nel path di Google Maps
+        match = re.search(r'0x[a-f0-9]+:0x[a-f0-9]+', url)
+        if match:
+            return match.group(0)
+        
         return None
 
     def _download_photos(self, photo_references: List[str], place_id: str, n: int) -> List[str]:
@@ -192,7 +230,7 @@ class GoogleMapsGeocoder:
             "local_photos": local_photos
         }
 
-    def resolve(self, query: str, download_n_images: int = 3) -> Optional[Dict[str, Any]]:
+    def resolve(self, query: str, download_n_images: int = 5) -> Optional[Dict[str, Any]]:
         """Entry point principale della classe."""
         if query.startswith("http"):
             try:
