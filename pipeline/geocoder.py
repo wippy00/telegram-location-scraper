@@ -162,7 +162,7 @@ class GoogleMapsGeocoder:
                 
         return downloaded_paths
 
-    def get_details_by_id(self, place_id: str, download_n_images: int = 0) -> Optional[Dict[str, Any]]:
+    def get_details_by_id(self, place_id: str, download_n_images: int = 5) -> Optional[Dict[str, Any]]:
         """Cerca i dettagli usando l'ID e aggiunge i nuovi campi."""
         params = {
             "place_id": place_id,
@@ -179,7 +179,7 @@ class GoogleMapsGeocoder:
             print(f"Errore Details API: {e}")
         return None
 
-    def search_by_text(self, query: str, download_n_images: int = 0) -> Optional[Dict[str, Any]]:
+    def search_by_text(self, query: str, download_n_images: int = 5) -> Optional[Dict[str, Any]]:
         """Cerca tramite testo. Se trova il posto, usa i Details per avere tutti i dati completi."""
         clean_q = self._clean_query(query)
         params = {"query": clean_q, "key": self.api_key}
