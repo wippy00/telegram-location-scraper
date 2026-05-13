@@ -58,27 +58,24 @@ class MapsExtractor(BaseExtractor):
         if not url:
             return {"locations": [], "error": "No Google Maps URL found in text."}
 
-        # Eseguiamo la risoluzione dell'URL in un thread separato per non bloccare il bot
-        long_url = await asyncio.to_thread(self._sync_resolve_short_url, url)
-
         # Chiamiamo il geocoder internamente
-        geocoder_result = await asyncio.to_thread(self._sync_geocoder_resolve, long_url)
+        geocoder_result = await asyncio.to_thread(self._sync_geocoder_resolve, url)
         
         if geocoder_result:
             return {"locations": [geocoder_result], "error": None}
         
-        # FALLBACK 1: Se il messaggio ha testo prima del link, usalo
-        fallback_text = self._extract_text_before_url(text)
-        if fallback_text:
-            fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_text, 5)
-            if fallback_result:
-                return {"locations": [fallback_result]}
+        # # FALLBACK 1: Se il messaggio ha testo prima del link, usalo
+        # fallback_text = self._extract_text_before_url(text)
+        # if fallback_text:
+        #     fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_text, 5)
+        #     if fallback_result:
+        #         return {"locations": [fallback_result]}
         
-        # FALLBACK 2: Estrai il testo dal path dell'URL
-        fallback_query = self._extract_fallback_query(long_url)
-        if fallback_query:
-            fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_query, 5)
-            if fallback_result:
-                return {"locations": [fallback_result], "error": None}
+        # # FALLBACK 2: Estrai il testo dal path dell'URL
+        # fallback_query = self._extract_fallback_query(long_url)
+        # if fallback_query:
+        #     fallback_result = await asyncio.to_thread(self.geocoder.search_by_text, fallback_query, 5)
+        #     if fallback_result:
+        #         return {"locations": [fallback_result], "error": None}
             
         return {"locations": [], "error": None}
