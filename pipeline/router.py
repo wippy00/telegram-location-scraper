@@ -22,7 +22,7 @@ async def extract_locations_from_message(text: str, message_id: int = None, db: 
     #     result = await AddressExtractor().process(text)
         
     else:
-        result = {"locations": []} # Ignora messaggi sconosciuti
+        result = {"locations": [], "error": None} # Ignora messaggi sconosciuti
 
     result["platform_detected"] = platform.value if platform else None # type: ignore
     return result

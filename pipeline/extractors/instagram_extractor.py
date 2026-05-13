@@ -67,7 +67,7 @@ class InstagramExtractor(BaseExtractor):
         match = re.search(r"(https?://(?:www\.)?instagram\.com/reel/[^\s]+)", text)
         if not match:
             print("[InstagramExtractor] Nessun link reel trovato nel testo.")
-            return {"locations": []}
+            return {"locations": [], "error": None}
             
         reel_url = match.group(1)
         shortcode_match = re.search(r"instagram\.com/reel/([^/?]+)", reel_url)
@@ -95,11 +95,12 @@ class InstagramExtractor(BaseExtractor):
                 job.ocr_status = "processing"
                 self.db.upsert_media_job(job)
         except Exception as e:
-            print(f"[InstagramExtractor] Errore yt-dlp: {e}")
+            error_msg = f"Download failed: {str(e)}"
+            print(f"[InstagramExtractor] Errore yt-dlp: {error_msg}")
             if job:
                 job.download_status = f"failed: {str(e)}"
                 self.db.upsert_media_job(job)
-            return {"locations": []}
+            return {"locations": [], "error": error_msg}
 
         # 4. OCR (in background)
         print(f"[InstagramExtractor] Eseguendo OCR su {video_data['filepath']}...")
@@ -131,7 +132,7 @@ class InstagramExtractor(BaseExtractor):
 
         if not ai_places:
             print("[InstagramExtractor] L'IA non ha trovato nessun luogo valido.")
-            return {"locations": []}
+            return {"locations": [], "error": None}
 
         # 5. GEOCODING & MERGE DEI DATI
         print(f"[InstagramExtractor] Trovati {len(ai_places)} luoghi dall'IA. Cerco su Maps...")
@@ -143,8 +144,9 @@ class InstagramExtractor(BaseExtractor):
             
             # Chiamiamo Google Maps
             if not query_to_search:
-                print(f"[InstagramExtractor] Nessuna query valida per Maps per il luogo: {ai_place.get('name')}")
-                return {"locations": []}
+                error_msg = f"No valid query for place: {ai_place.get('name')}"
+                print(f"[InstagramExtractor] {error_msg}")
+                return {"locations": [], "error": error_msg}
             
             maps_data = await asyncio.to_thread(self._sync_geocoder_resolve, query_to_search)
 
@@ -169,4 +171,4 @@ class InstagramExtractor(BaseExtractor):
             else:
                 print(f"[InstagramExtractor] Impossibile trovare su Maps: {query_to_search}")
 
-        return {"locations": final_locations}
+        return {"locations": final_locations, "error": None}

@@ -4,7 +4,17 @@ import requests
 from urllib.parse import urlparse, parse_qs
 from typing import Optional, Dict, Any, List
 
-from models.location import MarkerCategory
+# from models.location import MarkerCategory
+
+from enum import Enum
+class MarkerCategory(str, Enum):
+    FOOD = "food"
+    LANDMARK = "landmark"
+    FUN = "fun"
+    CULTURE = "culture"
+    TRANSPORT = "transport"
+    CITY = "city"
+    OTHER = "other"
 
 
 class GoogleMapsGeocoder:
@@ -259,10 +269,11 @@ if __name__ == "__main__":
     
     # Esempio di test
     test_queries = [
-        "Colosseo, Roma",
-        "https://maps.app.goo.gl/KizNVuFSe5pfTBrf7?g_st=ic"
+        # "Colosseo, Roma",
+        # "https://maps.app.goo.gl/KizNVuFSe5pfTBrf7?g_st=ic"
+        "https://maps.app.goo.gl/nMyqgUZdmm1ivpYp8"
     ]
     
     for query in test_queries:
-        result = geocoder.resolve(query, download_n_images=5)
+        result = geocoder.resolve(query, download_n_images=0)
         print(f"Query: {query}\nResult: {result}\n{'-'*40}")

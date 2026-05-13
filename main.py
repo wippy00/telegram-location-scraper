@@ -38,6 +38,13 @@ async def run_worker():
                 try:
                     extracted_data = await extract_locations_from_message(msg.raw_text, msg.id, db) # type: ignore
                     
+                    # Controlla se c'è un errore
+                    if extracted_data.get("error"):
+                        error_msg = extracted_data.get("error")
+                        print(f"Errore durante l'elaborazione: {error_msg}")
+                        db.update_message_status(msg.id, PipelineStatus.FAILED) #type: ignore
+                        continue
+                    
                     # Salva il platform_detected
                     platform_detected = extracted_data.get("platform_detected")
                     if platform_detected:

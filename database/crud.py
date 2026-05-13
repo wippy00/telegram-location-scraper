@@ -63,6 +63,11 @@ class DatabaseCRUD:
     #   Telegram Message Methods
     # ----------------------------------------
 
+    def get_messages(self) -> List[TelegramMessage]:
+        with Session(self.engine) as session:
+            statement = select(TelegramMessage).order_by(col(TelegramMessage.timestamp))
+            return list(session.exec(statement).all())
+
     def get_telegram_message(self, chat_id: int, telegram_id: int) -> TelegramMessage | None:
         """
         NOTA BENE: Ora cerca per chat_id E telegram_id per via del vincolo di univocità.

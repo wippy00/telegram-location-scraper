@@ -47,3 +47,20 @@ class Location(SQLModel, table=True):
     is_deleted: bool = Field(default=False, index=True)
     
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __repr__(self):
+        return (
+            f"\n"
+            f"    {'id':<12} {self.id}\n"
+            f"    {'name':<12} {self.name}\n"
+            f"    {'description':<12} {self.description},\n"
+            # f"    {'lat':<12} {self.lat},\n"
+            # f"    {'lng':<12} {self.lng},\n"
+            # f"    {'images':<12} {self.images}\n"
+            f"    {'address':<12} {self.address}\n"
+            f"    {'website':<12} {self.website}\n"
+            f"    {'category':<12} {self.category}\n"
+            f"    {'google_maps_tags':<12} {self.google_maps_tags}\n"
+            f"    {'google_maps_url':<12} {self.google_maps_url}\n"
+            f"\n"
+    )
