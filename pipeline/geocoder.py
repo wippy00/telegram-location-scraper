@@ -222,6 +222,8 @@ class GoogleMapsGeocoder:
 
 
         address = ",".join(parts[1:]).strip() if len(parts) > 1 else None
+        if address and "@" in address:
+            address = ",".join(address[1:].split(",")[:2])
         
         # 4. Analisi del parametro 'data'
         place_id = None
@@ -367,7 +369,7 @@ class GoogleMapsGeocoder:
 
 
     ## MAIN FUNCTION TO FETCH PLACE DETAILS USING TEXT SEARCH API ##
-    def fetch_place_details_by_query(self, query: str, download_n_images: int = 5) -> Optional[Dict[str, Any]]:
+    def fetch_place_details_by_query(self, query: str, download_n_images: int = 5, lat: str = "", lng: str = "") -> Optional[Dict[str, Any]]:
         """Cerca i dettagli usando la query e aggiunge i nuovi campi."""
 
         url = self.text_search_url
@@ -379,10 +381,24 @@ class GoogleMapsGeocoder:
             "X-Goog-FieldMask": "places.displayName,places.location,places.id,places.googleMapsUri,places.photos,places.formattedAddress,places.types,places.websiteUri"
         }
 
-        payload = {
+        payload: dict[str, Any] = {
             "textQuery": query,
-            "languageCode": "it"
+            # "languageCode": "it"
         }
+
+        if lat and lng:
+            payload["locationBias"] = {
+                "circle": {
+                    "center": {
+                        "latitude": float(lat),
+                        "longitude": float(lng)
+                    },
+                    "radius": 500  # Raggio di 500 metri
+                }
+            }
+
+        print(f"Payload: {payload}")
+            
         try:
             response = requests.post(url, headers=headers, json=payload, timeout=10)
             data = response.json()
@@ -400,6 +416,7 @@ class GoogleMapsGeocoder:
                 return self._format_result(place, maps_url, download_n_images)
             else:
                 print(f"Nessun risultato trovato per la query: {query}")
+                print(f"Risposta API: {data}")
                 
         except Exception as e:
             print(f"Errore Details API: {e}")
@@ -427,12 +444,14 @@ class GoogleMapsGeocoder:
                     result = self.parse_google_maps_url_place(final_url)
                     # place_id = result.get("place_id")
                     place_name = result.get("place_name")
-                    place_address = result.get("address")
+                    place_address = result.get("address", "")
+
+                    print(place_address)
                     
                     if place_name:
                         # print(f"{place_name} \n {place_address}")
                         # print(fetch_place_details_by_query(f"{place_name}  {place_address}"))
-                        return self.fetch_place_details_by_query(f"{place_name}  {place_address}", download_n_images)
+                        return self.fetch_place_details_by_query(f"{place_name}", download_n_images, lat=str(place_address.split(",")[0]), lng=str(place_address.split(",")[1])) # type: ignore
 
                 elif re.search(r'https://maps\.google\.[a-z]+/maps\?q=', final_url):
                     print("query")
@@ -475,11 +494,12 @@ if __name__ == "__main__":
     
     # Esempio di test
     test_queries = [
-        "Colosseo, Roma",
+        # "Colosseo, Roma",
         # "https://maps.app.goo.gl/KizNVuFSe5pfTBrf7?g_st=ic"
         # "https://maps.app.goo.gl/nMyqgUZdmm1ivpYp8"
+        "https://maps.app.goo.gl/pZmpP4zDzfN68HoZ7"
     ]
     
     for query in test_queries:
-        result = geocoder.resolve(query, download_n_images=5)
-        print(f"Query: {query}\nResult: {result}\n{'-'*40}")
+        result = geocoder.resolve(query, download_n_images=0)
+        print(f"Query/Link: {query}\nResult: {result}\n{'-'*40}")
