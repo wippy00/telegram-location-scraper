@@ -10,6 +10,8 @@ from pipeline.geocoder import GoogleMapsGeocoder
 # Importiamo le tue utility (che abbiamo pulito in precedenza)
 from utils.video_ocr import extract_burned_subtitles_text
 from utils.llm_extractor import extract_places_via_llm
+from utils.llm_extractor_gemini import extract_places_from_video
+
 
 
 from models.media_job import MediaProcessingJob
@@ -74,58 +76,82 @@ class InstagramExtractor(BaseExtractor):
         shortcode = shortcode_match.group(1) if shortcode_match else "unknown"
 
         job = None
-        if self.db and self.message_id:
-            # 2. Inizializza il Job nel DB se fornito
-            job = MediaProcessingJob(
-                message_id=self.message_id,
-                source_url=reel_url,
-                download_status="processing"
-            )
-            self.db.upsert_media_job(job)
+        video_data = None
 
-        # 3. DOWNLOAD (in background)
-        try:
-            print(f"[InstagramExtractor] Scaricando reel: {shortcode}...")
-            video_data = await asyncio.to_thread(self._sync_download_reel, reel_url, shortcode)
-            if job:
-                job.media_path = video_data["filepath"]
-                job.description = video_data["description"]
-                job.raw_metadata = video_data["metadata"]
-                job.download_status = "completed"
-                job.ocr_status = "processing"
-                self.db.upsert_media_job(job)
-        except Exception as e:
-            error_msg = f"Download failed: {str(e)}"
-            print(f"[InstagramExtractor] Errore yt-dlp: {error_msg}")
-            if job:
-                job.download_status = f"failed: {str(e)}"
-                self.db.upsert_media_job(job)
-            return {"locations": [], "error": error_msg}
+        if self.db:
+            # Controllo se abbiamo già scaricato con successo questo Reel (sia come message_id che come URL generico)
+            existing_job = self.db.get_media_job(self.message_id) if self.message_id else None
+            if not existing_job:
+                existing_job = self.db.get_media_job_by_source_url(reel_url)
+            
+            if existing_job and existing_job.download_status == "completed" and existing_job.media_path and os.path.exists(existing_job.media_path):
+                print(f"[InstagramExtractor] Reel già elaborato e presente su disco. Skip download.")
+                video_data = {
+                    "filepath": existing_job.media_path,
+                    "description": existing_job.description or "",
+                    "metadata": existing_job.raw_metadata or {}
+                }
+                
+                # Se stiamo processando un NUOVO messaggio con lo stesso reel, copiamo un nuovo job
+                if self.message_id and existing_job.message_id != self.message_id:
+                    job = MediaProcessingJob(
+                        message_id=self.message_id,
+                        source_url=reel_url,
+                        download_status="completed",
+                        ocr_status="processing",
+                        media_path=existing_job.media_path,
+                        description=existing_job.description,
+                        raw_metadata=existing_job.raw_metadata
+                    )
+                    self.db.upsert_media_job(job)
+                else:
+                    job = existing_job
+                    job.ocr_status = "processing"
+                    self.db.upsert_media_job(job)
+            else:
+                if self.message_id:
+                    # Inizializza il Job nel DB per il nuovo download
+                    job = existing_job or MediaProcessingJob(
+                        message_id=self.message_id,
+                        source_url=reel_url,
+                        download_status="processing"
+                    )
+                    job.download_status = "processing"
+                    self.db.upsert_media_job(job)
 
-        # 4. OCR (in background)
-        print(f"[InstagramExtractor] Eseguendo OCR su {video_data['filepath']}...")
-        ocr_text, ocr_status = await asyncio.to_thread(
-            extract_burned_subtitles_text, 
-            video_data["filepath"]
-        )
-        if job:
-            job.ocr_text = ocr_text
-            job.ocr_status = "completed" if ocr_status == "success" else ocr_status
-            job.ai_status = "processing"
-            self.db.upsert_media_job(job)
+        # 3. DOWNLOAD (se non in cache)
+        if not video_data:
+            try:
+                print(f"[InstagramExtractor] Scaricando reel: {shortcode}...")
+                video_data = await asyncio.to_thread(self._sync_download_reel, reel_url, shortcode)
+                if job:
+                    job.media_path = video_data["filepath"]
+                    job.description = video_data["description"]
+                    job.raw_metadata = video_data["metadata"]
+                    job.download_status = "completed"
+                    job.ocr_status = "processing"
+                    self.db.upsert_media_job(job)
+            except Exception as e:
+                error_msg = f"Download failed: {str(e)}"
+                print(f"[InstagramExtractor] Errore yt-dlp: {error_msg}")
+                if job:
+                    job.download_status = f"failed: {str(e)}"
+                    self.db.upsert_media_job(job)
+                return {"locations": [], "error": error_msg}
 
-        # 5. ESTRAZIONE AI (in background)
-        print("[InstagramExtractor] Analizzando con l'LLM...")
+        # 4-5. GEMINI MULTIMODALE: OCR + LLM EXTRACTION in UNA SOLA CHIAMATA
+        # Gemini legge il video (estrae testi, sottotitoli, etc.) + legge la descrizione
+        # e restituisce direttamente i posti estratti
+        print("[InstagramExtractor] Analizzando video con Google Gemini (OCR + LLM integrato)...")
         
         ai_places = await asyncio.to_thread(
-            extract_places_via_llm, 
-            video_data["description"], 
-            ocr_text
+            extract_places_from_video,
+            video_data["filepath"],
+            video_data["description"]
         )
         
-        print(f"[DEBUG] AI places returned: {ai_places}")
-        
         if job:
+            job.ocr_status = "completed"  # Fatto da Gemini internamente
             job.ai_places_json = ai_places
             job.ai_status = "completed" if ai_places else "no_places_found"
             self.db.upsert_media_job(job)

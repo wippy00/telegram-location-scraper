@@ -81,13 +81,17 @@ class DatabaseCRUD:
 
     def upsert_telegram_message(self, message: TelegramMessage) -> TelegramMessage:
         with Session(self.engine) as session:
-            existing_message = self.get_telegram_message(message.chat_id, message.telegram_id)
+            statement = select(TelegramMessage).where(
+                TelegramMessage.chat_id == message.chat_id,
+                TelegramMessage.telegram_id == message.telegram_id
+            )
+            existing_message = session.exec(statement).first()
             
             if existing_message:
                 existing_message.raw_text = message.raw_text
-                existing_message.status = message.status
+                # Non sovrascrivere lo status se precedentemente processato
                 existing_message.platform_detected = message.platform_detected
-                session.merge(existing_message)
+                session.add(existing_message)
                 session.commit()
                 session.refresh(existing_message)
                 session.expunge(existing_message)
@@ -139,6 +143,12 @@ class DatabaseCRUD:
         """Recupera il Job associato a un messaggio Telegram."""
         with Session(self.engine) as session:
             statement = select(MediaProcessingJob).where(MediaProcessingJob.message_id == message_id)
+            return session.exec(statement).first()
+
+    def get_media_job_by_source_url(self, source_url: str) -> MediaProcessingJob | None:
+        """Recupera il Job associato a un URL sorgente (es. Reel Instagram)."""
+        with Session(self.engine) as session:
+            statement = select(MediaProcessingJob).where(MediaProcessingJob.source_url == source_url)
             return session.exec(statement).first()
 
     def upsert_media_job(self, job: MediaProcessingJob) -> MediaProcessingJob:

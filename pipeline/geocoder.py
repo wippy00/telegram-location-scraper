@@ -97,7 +97,15 @@ class GoogleMapsGeocoder:
         # Le 'photo_references' passate da _format_result ora sono in formato:
         # "places/ChIJ.../photos/AeUB..."
         for i, photo_name in enumerate(photo_references[:n]):
+            file_name = f"{place_id}_photo_{i}.jpg"
+            file_path = os.path.join(self.media_folder, file_name)
             
+            # Se la foto esiste già su disco, saltiamo il download
+            if os.path.exists(file_path):
+                print(f"[GoogleMapsGeocoder] Foto {i} per {place_id} già presente. Skip download.")
+                downloaded_paths.append(file_path)
+                continue
+
             # 1. Il nuovo URL incorpora dinamicamente il nome della foto
             url = f"https://places.googleapis.com/v1/{photo_name}/media"
             
@@ -113,9 +121,6 @@ class GoogleMapsGeocoder:
                 response = requests.get(url, params=params, stream=True, timeout=15)
                 
                 if response.status_code == 200:
-                    file_name = f"{place_id}_photo_{i}.jpg"
-                    file_path = os.path.join(self.media_folder, file_name)
-                    
                     # Salviamo l'immagine a blocchi (stream) per non intasare la RAM (Logica perfetta!)
                     with open(file_path, 'wb') as f:
                         for chunk in response.iter_content(1024):
