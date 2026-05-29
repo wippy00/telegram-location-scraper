@@ -1,0 +1,44 @@
+services:
+  api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    working_dir: /app
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - ./database:/database
+      - ./media:/media
+    restart: unless-stopped
+
+  main:
+    build: .
+    command: python main.py
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./database:/database
+      - ./media:/media
+      - ./cookies:/cookies
+    restart: unless-stopped
+
+  telegram:
+    build: .
+    command: python telegram/importer.py
+    working_dir: /app
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./database:/database
+      - telegram_session:/telegram_session
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+volumes:
+  telegram_session:

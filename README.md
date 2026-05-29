@@ -39,6 +39,21 @@ Per avviare il flusso di elaborazione, apri il terminale e lancia lo script prin
 python main.py
 ```
 
+## Avvio con Docker
+
+Per avviare i tre servizi separati in container usa:
+
+```bash
+docker compose up --build
+```
+
+Servizi inclusi:
+- `api`: espone FastAPI su `http://localhost:8000`
+- `main`: worker che processa i messaggi nel database
+- `telegram`: importer Telegram che popola il database dai topic configurati
+
+Il servizio `telegram` usa la sessione `telegram_session.session` montata dal progetto e legge le credenziali dal file `.env`.
+
 ### Come funziona il processo:
 1. **Autenticazione Scanner**: Al primo avvio, se il modulo Telegram è attivo, ti verrà richiesto il numero di telefono e un codice di verifica per creare la sessione (verranno salvati nel file _telegram_session.session_).
 2. **Scraping dei Video**: Il bot legge gli ultimi messaggi per trovare contenuti rilevanti da Reel o Shorts. I video vengono scaricati temporaneamente (e.g. con _yt-dlp_).

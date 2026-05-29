@@ -330,13 +330,13 @@ app.add_middleware(
 )
 
 # Database setup
-engine = get_engine()
+engine = get_engine("sqlite:////database/database.db")
 init_db(engine)
 db = DatabaseCRUD(engine)
 maps_geocoder = GoogleMapsGeocoder()
 
 # Media directory setup
-MEDIA_DIR = Path(__file__).parent / "media"
+MEDIA_DIR = Path("/media")
 
 # Mount static media files
 if MEDIA_DIR.exists():

@@ -14,7 +14,7 @@ async def run_worker():
     """Loop principale che scansiona il DB e processa i messaggi."""
     
     # 1. Configurazione Database
-    db_path = os.getenv("DATABASE_PATH", "sqlite:///data/database.db")
+    db_path = "sqlite:////database/database.db"
     engine = get_engine(db_path)
     init_db(engine)
     db = DatabaseCRUD(engine)

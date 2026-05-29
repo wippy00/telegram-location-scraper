@@ -6,6 +6,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from telethon import events
 from dotenv import load_dotenv
 from telethon.sync import TelegramClient as TgClient
 from telethon.errors import SessionPasswordNeededError, PhoneCodeInvalidError
@@ -26,6 +27,7 @@ topic_root_id = int(os.getenv("TELEGRAM_TOPIC_ROOT_ID", "65"))
 topic_limit = int(os.getenv("TELEGRAM_TOPIC_LIMIT", "1000"))
 database_path = os.getenv("DATABASE_PATH", "sqlite:///data/database.db")
 session_name = "telegram_session"
+session_file = "/telegram_session/telegram_session"
 
 if api_id == 0 or not api_hash:
     raise RuntimeError("Config Telegram mancante: TELEGRAM_API_ID / TELEGRAM_API_HASH")
@@ -35,8 +37,68 @@ engine = get_engine(database_path)
 init_db(engine) # Assicura che le tabelle esistano
 db = DatabaseCRUD(engine)
 
+
+def is_message_in_target_topic(message) -> bool:
+    """Riconosce i messaggi appartenenti al topic configurato."""
+    reply_to = getattr(message, "reply_to", None)
+    if not reply_to:
+        return False
+
+    reply_top_id = getattr(reply_to, "reply_to_top_id", None)
+    reply_msg_id = getattr(reply_to, "reply_to_msg_id", None)
+
+    return reply_top_id == topic_root_id or reply_msg_id == topic_root_id
+
+
+def save_telegram_message(message) -> bool:
+    """Converte e salva un messaggio Telegram se valido."""
+    if not message.message:
+        return False
+
+    telegram_message = TelegramMessage.from_telethon(message)
+
+    if telegram_message.telegram_id is None:
+        return False
+
+    existing_message = db.get_telegram_message(telegram_message.chat_id, telegram_message.telegram_id)
+    if existing_message:
+        return False
+
+    if "#ignore" in telegram_message.raw_text.lower():
+        return False
+
+    db.upsert_telegram_message(telegram_message)
+    snippet = telegram_message.raw_text[:50].replace("\n", " ")
+    print(f"[OK] Salvato: {snippet}...")
+    return True
+
+
+def import_missing_messages(client: TgClient, last_seen_telegram_id: int) -> int:
+    """Recupera eventuali messaggi persi prima dell'avvio del listener."""
+    imported_count = 0
+
+    messages = client.iter_messages(
+        chat_id,
+        min_id=last_seen_telegram_id,
+        limit=topic_limit,
+        reverse=True,
+    )
+
+    for message in messages:
+        if not is_message_in_target_topic(message):
+            continue
+
+        if message.id <= last_seen_telegram_id:
+            continue
+
+        if save_telegram_message(message):
+            imported_count += 1
+            last_seen_telegram_id = message.id
+
+    return imported_count
+
 # --- AVVIO TELETHON ---
-with TgClient(session_name, api_id, api_hash) as client:
+with TgClient(session_file, api_id, api_hash) as client:
     client: TgClient
     client.connect()
 
@@ -53,43 +115,28 @@ with TgClient(session_name, api_id, api_hash) as client:
         except PhoneCodeInvalidError:
             raise RuntimeError("Codice Telegram non valido.")
 
-    print(f"Scaricando i messaggi dal topic {topic_root_id} della chat {chat_id}...")
+    latest_message = db.get_latest_telegram_message(chat_id)
+    last_seen_telegram_id = latest_message.telegram_id if latest_message else 0
 
-    # Recupero Messaggi
-    messages = client.iter_messages(
-        chat_id,
-        limit=topic_limit,
-        reply_to=topic_root_id,
-        reverse=True, # Ordine cronologico dal più vecchio al più recente
-    )
+    print(f"Ascolto attivo per il topic {topic_root_id} della chat {chat_id}...")
+    if last_seen_telegram_id > 0:
+        print(f"Recupero eventuali messaggi mancanti dopo l'ID Telegram {last_seen_telegram_id}.")
 
-    saved_count = 0
-    ignored_count = 0
+    try:
+        imported_count = import_missing_messages(client, last_seen_telegram_id)
+        if imported_count:
+            print(f"Recupero iniziale completato: {imported_count} nuovi messaggi salvati.")
 
-    for message in messages:
-        # Se il messaggio non ha testo (es. è un evento di sistema), saltalo
-        if not message.message:
-            continue
+        @client.on(events.NewMessage(chats=chat_id))
+        async def on_new_message(event):
+            if not is_message_in_target_topic(event.message):
+                return
 
-        # Convertiamo l'oggetto di Telethon nel nostro modello SQLModel
-        telegram_message = TelegramMessage.from_telethon(message)
-        
-        # Filtro Custom: Ignora messaggi marcati con #ignore
-        if "#ignore" in telegram_message.raw_text.lower():
-            ignored_count += 1
-            continue
-            
-        try:
-            # USIAMO UPSERT: Niente più errori di "Already Exists"
-            db.upsert_telegram_message(telegram_message)
-            saved_count += 1
-            
-            # (Opzionale) stampa solo i primi 50 caratteri per non intasare il terminale
-            snippet = telegram_message.raw_text[:50].replace("\n", " ")
-            print(f"[OK] Salvato: {snippet}...")
-            
-        except Exception as e:
-            print(f"[ERRORE] Impossibile salvare il messaggio {telegram_message.telegram_id}: {e}")
+            if save_telegram_message(event.message):
+                print(f"[EVENT] Nuovo messaggio ricevuto nel topic {topic_root_id}.")
 
-    print("-" * 30)
-    print(f"Importazione completata: {saved_count} salvati, {ignored_count} ignorati.")
+        print("Listener Telegram avviato. In attesa di nuovi messaggi...")
+        client.run_until_disconnected()
+
+    except KeyboardInterrupt:
+        print("\nImporter Telegram fermato manualmente.")

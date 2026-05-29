@@ -34,7 +34,7 @@ class InstagramExtractor(BaseExtractor):
             "outtmpl": os.path.join(self.download_dir, f"{shortcode}.%(ext)s"),
             "format": "bv*+ba/b",
             "merge_output_format": "mp4",
-            "cookiefile": "cookies.txt",  # De-commenta se ti serve
+            "cookiefile": "/cookies/cookies.txt",  # De-commenta se ti serve
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
