@@ -451,12 +451,22 @@ class GoogleMapsGeocoder:
                     place_name = result.get("place_name")
                     place_address = result.get("address", "")
 
-                    print(place_address)
+                    print(ascii(place_address))
                     
                     if place_name:
-                        # print(f"{place_name} \n {place_address}")
-                        # print(fetch_place_details_by_query(f"{place_name}  {place_address}"))
-                        return self.fetch_place_details_by_query(f"{place_name}", download_n_images, lat=str(place_address.split(",")[0]), lng=str(place_address.split(",")[1])) # type: ignore
+                        
+                        address_parts = [part.strip() for part in place_address.split(",")] if place_address else []
+
+                        if len(address_parts) >= 2:
+                            try:
+                                lat = float(address_parts[0])
+                                lng = float(address_parts[1])
+                                return self.fetch_place_details_by_query(place_name, download_n_images, lat=str(lat), lng=str(lng))
+                            except (TypeError, ValueError):
+                                pass
+
+                        combined_query = f"{place_name} {place_address}".strip()
+                        return self.fetch_place_details_by_query(combined_query, download_n_images)
 
                 elif re.search(r'https://maps\.google\.[a-z]+/maps\?q=', final_url):
                     print("query")
@@ -502,7 +512,7 @@ if __name__ == "__main__":
         # "Colosseo, Roma",
         # "https://maps.app.goo.gl/KizNVuFSe5pfTBrf7?g_st=ic"
         # "https://maps.app.goo.gl/nMyqgUZdmm1ivpYp8"
-        "https://maps.app.goo.gl/pZmpP4zDzfN68HoZ7"
+        "https://maps.app.goo.gl/fNmnYP1Jz9wW6Jg8A"
     ]
     
     for query in test_queries:
