@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import asyncio
 from pydantic import BaseModel, Field, field_validator
@@ -335,42 +336,68 @@ init_db(engine)
 db = DatabaseCRUD(engine)
 maps_geocoder = GoogleMapsGeocoder()
 
-# Media directory setup
-MEDIA_DIR = Path("/media")
+# # Media directory setup
+# MEDIA_DIR = Path("./media/places")
 
-# Mount static media files
-if MEDIA_DIR.exists():
-    app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
+# # Mount static media files
+# if MEDIA_DIR.exists():
+#     app.mount("/media", StaticFiles(directory=str(MEDIA_DIR)), name="media")
 
-from fastapi.responses import FileResponse
+# from fastapi.responses import FileResponse
 
-@app.get("/api/image/{image_path:path}", tags=["Media"])
-async def get_image(image_path: str):
-    """Retrieve an image by its path/name from the media directory"""
-    if not MEDIA_DIR.exists():
-        raise HTTPException(status_code=404, detail="Media directory not found")
+# @app.get("/places/{image_path:path}", tags=["Media"])
+# async def get_image(image_path: str):
+#     """Retrieve an image by its path/name from the media directory"""
+#     # if not MEDIA_DIR.exists():
+#     #     raise HTTPException(status_code=404, detail="Media directory not found")
+#     print(f"Requested image path: {image_path}")
+#     # Clean up the path
+#     clean_path = image_path.replace("\\", "/").strip("/")
+#     if clean_path.startswith("media/"):
+#         clean_path = clean_path[6:]
+
+#     clean_path = image_path.replace("\\", "/").strip("/")
+#     if clean_path.startswith("places/"):
+#         clean_path = clean_path[7:]
         
-    # Clean up the path
-    clean_path = image_path.replace("\\", "/").strip("/")
-    if clean_path.startswith("media/"):
-        clean_path = clean_path[6:]
-        
-    file_path = (MEDIA_DIR / clean_path).resolve()
+#     file_path = (MEDIA_DIR / clean_path).resolve()
     
-    # Ensure it doesn't escape MEDIA_DIR
-    try:
-        if not file_path.is_relative_to(MEDIA_DIR.resolve()):
-            raise HTTPException(status_code=403, detail="Access denied")
-    except AttributeError:
-        # Fallback for older Python versions
-        if not str(file_path).startswith(str(MEDIA_DIR.resolve())):
-            raise HTTPException(status_code=403, detail="Access denied")
+#     # Ensure it doesn't escape MEDIA_DIR
+#     try:
+#         if not file_path.is_relative_to(MEDIA_DIR.resolve()):
+#             raise HTTPException(status_code=403, detail="Access denied")
+#     except AttributeError:
+#         # Fallback for older Python versions
+#         if not str(file_path).startswith(str(MEDIA_DIR.resolve())):
+#             raise HTTPException(status_code=403, detail="Access denied")
             
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Image not found")
+#     if not file_path.exists() or not file_path.is_file():
+#         raise HTTPException(status_code=404, detail="Image not found")
         
-    return FileResponse(file_path)
+#     return FileResponse(file_path)
 
+
+MEDIA_DIR = Path("media").resolve()
+
+app.mount(
+    "/media",
+    StaticFiles(directory=MEDIA_DIR),
+    name="media",
+)
+
+PLACES_DIR = (MEDIA_DIR / "places").resolve()
+
+@app.get("/places/{image_name}")
+async def get_image(image_name: str):
+    file_path = (PLACES_DIR / image_name).resolve()
+
+    if not file_path.is_relative_to(PLACES_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(file_path)
 # ----------------------------------------
 # Endpoints
 # ----------------------------------------

@@ -5,12 +5,12 @@ from sqlalchemy import Engine
 
 from models import TelegramMessage, Location, MediaProcessingJob
 
-def get_engine(db_path: str = "sqlite:///database/data.db") -> Engine:
+def get_engine(db_path: str = "sqlite:///database/database.db") -> Engine:
     """
     Risolve il percorso del database e restituisce l'Engine di SQLAlchemy/SQLModel.
     """
-    if db_path == "sqlite:////data/database.db":
-        db_path = "sqlite:///data/database.db"
+    if db_path == "sqlite:////database/database.db":
+        db_path = "sqlite:///database/database.db"
 
     if db_path.startswith("sqlite:///"):
         raw_path = db_path[len("sqlite:///"):]
